@@ -10,6 +10,8 @@ module Gym
 
     attr_accessor :cache
 
+    attr_accessor :runtime_attributes
+
     def config=(value)
       @config = value
       DetectValues.set_additional_default_values

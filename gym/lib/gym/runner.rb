@@ -12,6 +12,7 @@ require_relative 'error_handler'
 
 module Gym
   class Runner
+
     # @return (String) The path to the resulting ipa
     def run
       unless Gym.config[:skip_build_archive]
@@ -25,12 +26,22 @@ module Gym
         return BuildCommandGenerator.archive_path if Gym.config[:skip_package_ipa]
 
         package_app
-        compress_and_move_dsym
-        path = move_ipa
-        move_manifest
-        move_app_thinning
-        move_app_thinning_size_report
-        move_apps_folder
+
+        if Gym.config[:aggregate_targets]
+          Gym.config[:aggregate_targets].each do |target|
+            Gym.runtime_attributes[:output_name] = Gym.config[:output_name_pattern].sub('*', target)
+            compress_and_move_dsym target
+            path = move_ipa
+          end
+        else
+          Gym.runtime_attributes[:output_name] = Gym.config[:output_name]
+          compress_and_move_dsym
+          path = move_ipa
+          move_manifest
+          move_app_thinning
+          move_app_thinning_size_report
+          move_apps_folder
+        end
       elsif Gym.project.mac?
         path = File.expand_path(Gym.config[:output_directory])
         compress_and_move_dsym
@@ -139,13 +150,17 @@ module Gym
                                               end)
     end
 
-    def compress_and_move_dsym
+    def compress_and_move_dsym(target = nil)
       return unless PackageCommandGenerator.dsym_path
 
       # Compress and move the dsym file
       containing_directory = File.expand_path("..", PackageCommandGenerator.dsym_path)
       bcsymbolmaps_directory = File.expand_path("../../BCSymbolMaps", PackageCommandGenerator.dsym_path)
       available_dsyms = Dir.glob("#{containing_directory}/*.dSYM")
+
+      if target
+       available_dsyms -= Dir.glob("#{containing_directory}/*.app.dSYM") += ["#{containing_directory}/#{target}.app.dSYM"]
+      end
 
       if Dir.exist?(bcsymbolmaps_directory)
         UI.message("Mapping dSYM(s) using generated BCSymbolMaps") unless Gym.config[:silent]
@@ -160,7 +175,7 @@ module Gym
 
       UI.message("Compressing #{available_dsyms.count} dSYM(s)") unless Gym.config[:silent]
 
-      output_path = File.expand_path(File.join(Gym.config[:output_directory], Gym.config[:output_name] + ".app.dSYM.zip"))
+      output_path = File.expand_path(File.join(Gym.config[:output_directory], Gym.runtime_attributes[:output_name] + ".app.dSYM.zip"))
       command = "cd '#{containing_directory}' && zip -r '#{output_path}' *.dSYM"
       Helper.backticks(command, print: !Gym.config[:silent])
       puts("") # new line
